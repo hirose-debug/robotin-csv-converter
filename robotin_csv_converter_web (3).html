@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>robotin受注CSV変換ツール</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Noto Sans JP', sans-serif;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef } = React;
+
+        function App() {
+            const [dataList, setDataList] = useState([]);
+            const [selectedType, setSelectedType] = useState('');
+            const [isProcessing, setIsProcessing] = useState(false);
+            const fileInputRef = useRef(null);
+
+            const typeOptions = [
+                { value: 'SC', label: 'SC', color: 'bg-blue-100 text-blue-800' },
+                { value: '自社', label: '自社', color: 'bg-gray-100 text-gray-800' },
+                { value: '自社（複数）', label: '自社（複数）', color: 'bg-orange-100 text-orange-800' },
+                { value: '佐川', label: '佐川', color: 'bg-green-100 text-green-800' },
+                { value: '倉庫', label: '倉庫', color: 'bg-purple-100 text-purple-800' },
+                { value: '倉庫複数', label: '倉庫複数', color: 'bg-pink-100 text-pink-800' },
+                { value: '倉庫佐川', label: '倉庫佐川', color: 'bg-indigo-100 text-indigo-800' }
+            ];
+
+            const getCurrentDate = () => {
+                const now = new Date();
+                return `${now.getMonth() + 1}/${now.getDate()}`;
+            };
+
+            const handleFileUpload = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                if (!selectedType && selectedType !== '') {
+                    alert('B列の値を選択してください');
+                    return;
+                }
+
+                setIsProcessing(true);
+
+                Papa.parse(file, {
+                    encoding: 'Shift_JIS',
+                    complete: (results) => {
+                        try {
+                            const headers = results.data[0];
+                            const rows = results.data.slice(1);
+
+                            const requiredColumns = ['メモ2', '店舗名', '商品名', '配送先氏名', '選択肢', '単価', '数量'];
+                            const columnIndices = {};
+
+                            requiredColumns.forEach(col => {
+                                const index = headers.indexOf(col);
+                                if (index === -1) {
+                                    throw new Error(`必要なカラムが見つかりません: ${col}`);
+                                }
+                                columnIndices[col] = index;
+                            });
+
+                            const processedRows = rows
+                                .filter(row => row.length > 1 && row.some(cell => cell && cell.trim()))
+                                .map(row => ({
+                                    日付: getCurrentDate(),
+                                    メモ2: selectedType,
+                                    店舗名: row[columnIndices['店舗名']] || '',
+                                    商品名: row[columnIndices['商品名']] || '',
+                                    配送先氏名: row[columnIndices['配送先氏名']] || '',
+                                    選択肢: row[columnIndices['選択肢']] || '',
+                                    単価: row[columnIndices['単価']] || '',
+                                    数量: row[columnIndices['数量']] || ''
+                                }));
+
+                            setDataList(prev => [
+                                ...prev,
+                                {
+                                    id: Date.now(),
+                                    fileName: file.name,
+                                    type: selectedType,
+                                    rowCount: processedRows.length,
+                                    rows: processedRows,
+                                    uploadTime: new Date().toLocaleTimeString('ja-JP')
+                                }
+                            ]);
+
+                            alert(`${processedRows.length}件のデータを取り込みました`);
+                            if (fileInputRef.current) {
+                                fileInputRef.current.value = '';
+                            }
+                        } catch (error) {
+                            alert(`エラー: ${error.message}`);
+                        } finally {
+                            setIsProcessing(false);
+                        }
+                    },
+                    error: (error) => {
+                        alert(`ファイル読み込みエラー: ${error.message}`);
+                        setIsProcessing(false);
+                    }
+                });
+            };
+
+            const removeData = (id) => {
+                setDataList(prev => prev.filter(item => item.id !== id));
+            };
+
+            const clearAll = () => {
+                if (confirm('すべてのデータを削除しますか?')) {
+                    setDataList([]);
+                }
+            };
+
+            const exportToExcel = async () => {
+                if (dataList.length === 0) {
+                    alert('取り込まれたデータがありません');
+                    return;
+                }
+
+                setIsProcessing(true);
+
+                try {
+                    const workbook = new ExcelJS.Workbook();
+                    const worksheet = workbook.addWorksheet('受注データ');
+
+                    // ヘッダー行
+                    const headers = ['日付', 'メモ2', '店舗名', '商品名', '配送先氏名', '選択肢', '単価', '数量'];
+                    const headerRow = worksheet.addRow(headers);
+                    
+                    headerRow.font = { name: 'Arial', bold: true, size: 11 };
+                    headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+                    headerRow.height = 20;
+
+                    // データをB列（メモ2）の値でグループ化
+                    const typeOrder = ['SC', '自社', '自社（複数）', '佐川', '倉庫', '倉庫複数', '倉庫佐川'];
+                    const groupedData = {};
+                    
+                    typeOrder.forEach(type => {
+                        groupedData[type] = [];
+                    });
+
+                    dataList.forEach(item => {
+                        groupedData[item.type].push(...item.rows);
+                    });
+
+                    // グループ別にデータを追加（グループ間に空行）
+                    let isFirst = true;
+                    typeOrder.forEach(type => {
+                        if (groupedData[type].length > 0) {
+                            if (!isFirst) {
+                                worksheet.addRow([]); // 空行を追加
+                            }
+                            isFirst = false;
+
+                            groupedData[type].forEach(row => {
+                                // 「自社」と「自社（複数）」は出力時に空欄にする
+                                const memo2Value = (row.メモ2 === '自社' || row.メモ2 === '自社（複数）') ? '' : row.メモ2;
+                                
+                                const dataRow = worksheet.addRow([
+                                    row.日付,
+                                    memo2Value,
+                                    row.店舗名,
+                                    row.商品名,
+                                    row.配送先氏名,
+                                    row.選択肢,
+                                    row.単価,
+                                    row.数量
+                                ]);
+                                dataRow.font = { name: 'Arial', size: 10 };
+                            });
+                        }
+                    });
+
+                    // 列幅の自動調整
+                    worksheet.columns.forEach((column, index) => {
+                        let maxLength = headers[index].length;
+                        worksheet.eachRow((row, rowNumber) => {
+                            if (rowNumber > 1) {
+                                const cell = row.getCell(index + 1);
+                                if (cell.value) {
+                                    const length = String(cell.value).length;
+                                    maxLength = Math.max(maxLength, length);
+                                }
+                            }
+                        });
+                        column.width = Math.min(maxLength + 2, 50);
+                    });
+
+                    // ファイルをダウンロード
+                    const buffer = await workbook.xlsx.writeBuffer();
+                    const blob = new Blob([buffer], { 
+                        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+                    });
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    
+                    const date = new Date();
+                    const dateStr = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+                    link.download = `robotin_converted_${dateStr}.xlsx`;
+                    
+                    link.click();
+                    window.URL.revokeObjectURL(url);
+
+                    alert('Excelファイルをダウンロードしました');
+                } catch (error) {
+                    alert(`エラー: ${error.message}`);
+                } finally {
+                    setIsProcessing(false);
+                }
+            };
+
+            const totalRows = dataList.reduce((sum, item) => sum + item.rowCount, 0);
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
+                    {/* ヘッダー */}
+                    <div className="gradient-bg text-white py-8 shadow-lg">
+                        <div className="max-w-6xl mx-auto px-6">
+                            <h1 className="text-3xl font-bold mb-2">robotin受注CSV変換ツール</h1>
+                            <p className="text-blue-100">複数のCSVファイルを取り込んで、1つのExcelファイルに統合</p>
+                        </div>
+                    </div>
+
+                    <div className="max-w-6xl mx-auto px-6 py-8">
+                        {/* アップロードエリア */}
+                        <div className="bg-white rounded-2xl shadow-lg p-8 mb-6 card-hover fade-in">
+                            <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
+                                <span className="bg-purple-100 text-purple-700 rounded-lg px-3 py-1 mr-3 text-sm">STEP 1</span>
+                                CSVファイルを取り込む
+                            </h2>
+
+                            {/* B列の値選択 */}
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-3">
+                                    B列の値を選択してください
+                                </label>
+                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                                    {typeOptions.map(option => (
+                                        <label 
+                                            key={option.value}
+                                            className={`
+                                                flex items-center justify-center px-4 py-3 rounded-xl cursor-pointer
+                                                border-2 transition-all
+                                                ${selectedType === option.value 
+                                                    ? 'border-purple-500 bg-purple-50 shadow-md' 
+                                                    : 'border-gray-200 hover:border-purple-300'}
+                                            `}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="type"
+                                                value={option.value}
+                                                checked={selectedType === option.value}
+                                                onChange={(e) => setSelectedType(e.target.value)}
+                                                className="mr-2"
+                                            />
+                                            <span className={`px-3 py-1 rounded-lg text-sm font-medium ${option.color}`}>
+                                                {option.label}
+                                            </span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* ファイル選択 */}
+                            <div className="border-2 border-dashed border-purple-300 rounded-xl p-8 text-center bg-purple-50/30 hover:bg-purple-50/50 transition-colors">
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".csv"
+                                    onChange={handleFileUpload}
+                                    disabled={isProcessing || selectedType === null}
+                                    className="hidden"
+                                    id="file-upload"
+                                />
+                                <label 
+                                    htmlFor="file-upload"
+                                    className={`
+                                        cursor-pointer inline-block
+                                        ${(isProcessing || selectedType === null) ? 'opacity-50' : ''}
+                                    `}
+                                >
+                                    <div className="text-6xl mb-4">📁</div>
+                                    <div className="text-lg font-medium text-gray-700 mb-2">
+                                        {isProcessing ? '処理中...' : 'クリックしてCSVファイルを選択'}
+                                    </div>
+                                    <div className="text-sm text-gray-500">
+                                        robotin出力のCSVファイル（Shift-JIS形式）
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* データリスト */}
+                        {dataList.length > 0 && (
+                            <div className="bg-white rounded-2xl shadow-lg p-8 mb-6 fade-in">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h2 className="text-xl font-bold text-gray-800 flex items-center">
+                                        <span className="bg-purple-100 text-purple-700 rounded-lg px-3 py-1 mr-3 text-sm">STEP 2</span>
+                                        取り込み済みデータ
+                                        <span className="ml-3 text-sm font-normal text-gray-500">
+                                            合計 <span className="font-bold text-purple-600">{totalRows}</span> 件
+                                        </span>
+                                    </h2>
+                                    <button
+                                        onClick={clearAll}
+                                        className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium"
+                                    >
+                                        全削除
+                                    </button>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {dataList.map((item, index) => {
+                                        const typeOption = typeOptions.find(opt => opt.value === item.type);
+                                        return (
+                                            <div 
+                                                key={item.id}
+                                                className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                                            >
+                                                <div className="flex items-center space-x-4 flex-1">
+                                                    <div className="bg-purple-100 text-purple-700 rounded-lg px-3 py-1 text-sm font-bold mono">
+                                                        #{index + 1}
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <div className="font-medium text-gray-800 mb-1">{item.fileName}</div>
+                                                        <div className="text-sm text-gray-500 flex items-center space-x-3">
+                                                            <span className={`px-2 py-1 rounded ${typeOption?.color}`}>
+                                                                {typeOption?.label}
+                                                            </span>
+                                                            <span>{item.rowCount}件</span>
+                                                            <span>取込時刻: {item.uploadTime}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => removeData(item.id)}
+                                                    className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm"
+                                                >
+                                                    削除
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* エクスポートボタン */}
+                        {dataList.length > 0 && (
+                            <div className="bg-white rounded-2xl shadow-lg p-8 fade-in">
+                                <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
+                                    <span className="bg-purple-100 text-purple-700 rounded-lg px-3 py-1 mr-3 text-sm">STEP 3</span>
+                                    Excelファイルをダウンロード
+                                </h2>
+                                <button
+                                    onClick={exportToExcel}
+                                    disabled={isProcessing}
+                                    className={`
+                                        w-full py-4 rounded-xl font-bold text-lg transition-all
+                                        ${isProcessing 
+                                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                                            : 'gradient-bg text-white hover:shadow-xl transform hover:-translate-y-1'}
+                                    `}
+                                >
+                                    {isProcessing ? '処理中...' : '📥 Excelファイルをダウンロード'}
+                                </button>
+                                <div className="mt-4 text-sm text-gray-500 text-center">
+                                    B列の値（SC→自社→自社（複数）→佐川→倉庫→倉庫複数→倉庫佐川）でグループ化し、グループ間に空行を挿入します
+                                    <br />
+                                    ※「自社」と「自社（複数）」は出力時に空欄になります
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 使い方 */}
+                        {dataList.length === 0 && (
+                            <div className="bg-white rounded-2xl shadow-lg p-8 fade-in">
+                                <h2 className="text-xl font-bold text-gray-800 mb-4">使い方</h2>
+                                <ol className="space-y-3 text-gray-600">
+                                    <li className="flex items-start">
+                                        <span className="bg-purple-100 text-purple-700 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold mr-3 mt-0.5">1</span>
+                                        <span>B列の値（自社/SC/RSL/倉庫）を選択します</span>
+                                    </li>
+                                    <li className="flex items-start">
+                                        <span className="bg-purple-100 text-purple-700 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold mr-3 mt-0.5">2</span>
+                                        <span>robotin出力のCSVファイルを選択して取り込みます（複数回繰り返し可能）</span>
+                                    </li>
+                                    <li className="flex items-start">
+                                        <span className="bg-purple-100 text-purple-700 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold mr-3 mt-0.5">3</span>
+                                        <span>すべてのデータを取り込んだら、Excelファイルをダウンロードします</span>
+                                    </li>
+                                </ol>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
