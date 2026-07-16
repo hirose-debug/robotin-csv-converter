@@ -93,6 +93,13 @@
                                 columnIndices[col] = index;
                             });
 
+                            // SKU（商品コード）: ヘッダー名で検索し、無ければAE列（31列目 = index 30）を使用
+                            let skuIndex = headers.indexOf('商品コード');
+                            if (skuIndex === -1) {
+                                skuIndex = 30; // AE列
+                            }
+                            columnIndices['商品コード'] = skuIndex;
+
                             const processedRows = rows
                                 .filter(row => row.length > 1 && row.some(cell => cell && cell.trim()))
                                 .map(row => ({
@@ -103,7 +110,8 @@
                                     配送先氏名: row[columnIndices['配送先氏名']] || '',
                                     選択肢: row[columnIndices['選択肢']] || '',
                                     単価: row[columnIndices['単価']] || '',
-                                    数量: row[columnIndices['数量']] || ''
+                                    数量: row[columnIndices['数量']] || '',
+                                    商品コード: row[columnIndices['商品コード']] || ''
                                 }));
 
                             setDataList(prev => [
@@ -158,7 +166,7 @@
                     const worksheet = workbook.addWorksheet('受注データ');
 
                     // ヘッダー行
-                    const headers = ['日付', 'メモ2', '店舗名', '商品名', '配送先氏名', '選択肢', '単価', '数量'];
+                    const headers = ['日付', 'メモ2', '店舗名', '商品名', '配送先氏名', '選択肢', '単価', '数量', 'SKU'];
                     const headerRow = worksheet.addRow(headers);
                     
                     headerRow.font = { name: 'Arial', bold: true, size: 11 };
@@ -198,7 +206,8 @@
                                     row.配送先氏名,
                                     row.選択肢,
                                     row.単価,
-                                    row.数量
+                                    row.数量,
+                                    row.商品コード
                                 ]);
                                 dataRow.font = { name: 'Arial', size: 10 };
                             });
